@@ -53,7 +53,10 @@ def split_by_headings(text: str) -> List[Dict]:
         parts.append({"section": section, "text": chunk})
     return parts
 
-def window_chunks(text: str, size=900, overlap=160) -> List[str]:
+CHUNK_SIZE = 900
+CHUNK_OVERLAP = 160
+
+def window_chunks(text: str, size=CHUNK_SIZE, overlap=CHUNK_OVERLAP) -> List[str]:
     text = text.strip()
     if len(text) <= size:
         return [text] if text else []
@@ -78,6 +81,7 @@ def chunk_text(full: str) -> List[Dict]:
     return out
 
 # ---------- 実行 ----------
+# rawフォルダの.pdf, .docx, .txtを読み、data/processed/chunks.jsonlに構造化して出力
 def main(raw_dir: Path, out_path: Path):
     raw_dir = raw_dir if raw_dir else Path("data/raw")
     out_path = out_path if out_path else Path("data/processed/chunks.jsonl")
