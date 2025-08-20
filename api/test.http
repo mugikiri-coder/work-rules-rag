@@ -1,0 +1,8 @@
+﻿### health
+GET http://localhost:8000/health
+
+### ask (mock)
+POST http://localhost:8000/ask
+Content-Type: application/json
+
+{ "question": "有給はいつ申請すべき？" }
