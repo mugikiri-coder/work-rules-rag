@@ -1,4 +1,6 @@
 ﻿# api/main.py
+from pathlib import Path  # まだ無ければ追加
+ROOT = Path(__file__).resolve().parents[1]  # リポジトリのルート
 import os, json, requests
 from pathlib import Path
 from typing import List, Dict
@@ -6,6 +8,31 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import logging
+from logging.handlers import RotatingFileHandler
+from datetime import datetime
+import logging
+from logging.handlers import RotatingFileHandler
+
+# FastAPI 初期化のすぐ下に、簡易ロガー設定を追加
+app = FastAPI()
+
+LOG_DIR = ROOT / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+# ハンドラ & フォーマッタ
+handler = RotatingFileHandler(LOG_DIR / "app.log", maxBytes=512_000, backupCount=2, encoding="utf-8")
+formatter = logging.Formatter("%(asctime)s\t%(levelname)s\t%(name)s\t%(message)s")
+handler.setFormatter(formatter)
+
+# 重要：既存設定を強制リセット（Uvicornの設定も含めて）
+logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+
+# アプリ用ロガー
+logger = logging.getLogger("app")
+logger.setLevel(logging.INFO)
+logger.propagate = True
+
+logger.info("startup: app logger configured")  # 起動確認ログ
 
 # .env をプロジェクト直下から確実に読む（上書き）
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +79,7 @@ def health():
 
 @app.post("/ask")
 def ask(inp: AskIn):
+    logger.info(f"ASK received: q={inp.question!r}, top_k={inp.top_k}")
     hits = hybrid_search(inp.question, inp.top_k)
     if not hits:
         payload = {
@@ -68,3 +96,35 @@ def ask(inp: AskIn):
     payload = {"answer": answer, "citations": citations}
     return Response(content=json.dumps(payload, ensure_ascii=False),
                     media_type="application/json; charset=utf-8")
+
+@app.post("/ask")
+def ask(inp: AskIn):
+    logger.info(f"ASK received: q={inp.question!r}, top_k={inp.top_k}")
+    try:
+        hits = hybrid_search(inp.question, inp.top_k)
+        # 上位ヒットの概要をログ
+        summary = [{"source": h.get("source"), "section": h.get("section")} for h in hits[:3]]
+        logger.info(f"ASK\tq={inp.question}\tK={inp.top_k}\thits={summary}")
+
+        if not hits:
+            payload = {
+                "answer": "関連する規程が見つかりませんでした。キーワードを絞って再検索してください。",
+                "citations": [],
+            }
+            return Response(content=json.dumps(payload, ensure_ascii=False),
+                            media_type="application/json; charset=utf-8")
+
+        top = hits[0]
+        answer = (top.get("text") or "")[:500]
+        citations = [{"source": h.get("source"), "section": h.get("section")} for h in hits[:3]]
+
+        payload = {"answer": answer, "citations": citations}
+        return Response(content=json.dumps(payload, ensure_ascii=False),
+                        media_type="application/json; charset=utf-8")
+
+    except Exception as e:
+        # 失敗時も原因をログ
+        logger.exception(f"ASK_ERROR\tq={getattr(inp,'question',None)}\terr={e}")
+        payload = {"answer": "内部エラーが発生しました。時間をおいて再試行してください。", "citations": []}
+        return Response(content=json.dumps(payload, ensure_ascii=False),
+                        media_type="application/json; charset=utf-8", status_code=500)
